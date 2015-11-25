@@ -1,0 +1,115 @@
+#!/bin/sh
+# Arch linux regular maintenance script
+# run it manually and read the output thoroughly
+
+# send output through less
+
+PMINSTALL='sudo pacman -Sq --needed --noconfirm'
+AURINSTALL='pacaur -Saq --needed --noconfirm --noedit'
+
+red() {
+  tput setaf 1
+}
+white() {
+  tput setaf 7
+}
+green() {
+  tput setaf 2
+}
+
+echo -n Installing maintenance tools...
+$PMINSTALL reflector > /dev/null 2>&1
+$AURINSTALL lostfiles > /dev/null 2>&1
+green
+echo OK
+white
+
+echo -n Updating the pacman mirror list...
+sudo reflector --protocol https --sort score --save /etc/pacman.d/mirrorlist || exit
+green
+echo OK
+white
+
+echo Upgrading the system...
+sudo pacman -Syuq 2>&1 | while read line; do
+  echo "  $line"
+done
+echo
+
+echo Cleaning the pacman cache...
+sudo paccache -r 2>&1 | while read line; do
+  echo "  $line"
+done
+sudo paccache -ruk0 2>&1 | while read line; do
+  echo "  $line"
+done
+echo
+
+echo -n Checking for broken symlinks...
+FOUND=`sudo find / -type l -! -exec test -e {} \; -print 2> /dev/null | grep -ve "^/\(proc\|run\)"`
+if [ -z "$FOUND" ]; then
+  green
+  echo OK
+  white
+else
+  echo
+  echo "$FOUND" | while read line; do
+    echo -n "  - $line -> "
+    red
+    ls -l "$line" | rev | cut -d' ' -f1 | rev
+    white
+  done
+fi
+echo
+
+echo Checking for high-profile errors...
+sudo journalctl -p 0..3 -xn | while read line; do
+  echo "  $line"
+done
+echo
+
+echo Checking for failed systemd services...
+systemctl --all --failed | while read line; do
+  echo "  $line"
+done
+echo
+
+echo The following files are not owned by any package and should be investigated:
+sudo lostfiles | while read line; do
+  echo "  - $line"
+done
+echo
+
+echo The following official packages have been explicitly installed:
+
+# get the packages that pacman claims have been "explicitly installed"
+# this includes base and base-devel, which is problematic
+explicit=`pacman -Qen | cut -d' ' -f1`
+
+# get the members of base and base-devel
+bases=`pacman -Sg base | cut -d' ' -f2-`
+basedevels=`pacman -Sg base-devel | cut -d' ' -f2-`
+grouped="$bases $basedevels"
+
+# pull members of base and base-devel out of the "explicitly installed" list
+for pkg in $grouped; do
+  explicit=`echo $explicit | sed "s/\b$pkg\b//g"`
+done
+
+# print 'em
+for pkg in $explicit; do
+  echo "  - $pkg"
+done
+echo
+
+echo The following unofficial packages have been explicitly installed:
+pacman -Qem | cut -d' ' -f1 | while read line; do
+  echo "  - $line"
+done
+echo
+
+echo -n All clean.
+green
+echo " :-)"
+white
+exit 0
