@@ -133,7 +133,8 @@ else
 fi
 
 echo -n Checking for broken symlinks...
-FOUND=`sudo find / -type l -! -exec test -e {} \; -print 2> /dev/null | grep -ve "^/\(proc\|run\)"`
+# /tmp, /proc, and /run don't count
+FOUND=`sudo find / -type l -! -exec test -e {} \; -print 2> /dev/null | grep -ve "^/\(proc\|run\|tmp\)"`
 if [ -z "$FOUND" ]; then
   green
   echo OK
