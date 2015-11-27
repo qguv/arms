@@ -48,6 +48,18 @@ else
   white
 fi
 
+echo -n Setting the system clock...
+if [ $has_internet -ne 0 ]; then
+  yellow
+  echo "SKIP (no connection)"
+  white
+else
+  green
+  echo OK
+  white
+  sudo timedatectl set-ntp true
+fi
+
 echo -n Updating the pacman mirror list...
 if [ $has_reflector -ne 0 ]; then
   yellow
