@@ -76,7 +76,7 @@ if [ $has_internet -ne 0 ]; then
   white
 else
   echo
-  sudo pacman -Syuq 2>&1 | while read line; do
+  sudo pacman -Syu | while read line; do
     echo "  $line"
   done
   echo
