@@ -4,7 +4,7 @@
 
 # if outputting to a terminal, use COLORS
 colorize() {
-  if [ -t 1 ]; then
+  if [ -t 1 ] || [ $use_pager -eq 0 ]; then
     tput setaf $1
   fi
 }
@@ -21,182 +21,200 @@ white() {
   colorize 7
 }
 
-# interpret all options as options to mirrorlist
-mirrorlist_settings="$@"
-if [ -z "$mirrorlist_settings" ]; then
-  mirrorlist_settings="--protocol https --sort score"
-fi
+main() {
+  # interpret all options as options to mirrorlist
+  mirrorlist_settings="$@"
+  if [ -z "$mirrorlist_settings" ]; then
+    mirrorlist_settings="--protocol https --sort score"
+  fi
 
-# check for optional dependencies
-command -v reflector > /dev/null 2>&1
-has_reflector="$?"
-command -v lostfiles > /dev/null 2>&1
-has_lostfiles="$?"
+  # check for optional dependencies
+  command -v reflector > /dev/null 2>&1
+  has_reflector="$?"
+  command -v lostfiles > /dev/null 2>&1
+  has_lostfiles="$?"
 
-echo -n Checking for internet connectivity...
-curl -s www.archlinux.org > /dev/null
-has_internet="$?"
-if [ $has_internet -ne 0 ]; then
-  red
-  echo FAIL
-  white
-  echo "  maintenance tasks requiring internet connectivity have been disabled"
-  echo
-else
-  green
-  echo OK
-  white
-fi
+  echo -n Checking for internet connectivity...
+  curl -s www.archlinux.org > /dev/null
+  has_internet="$?"
+  if [ $has_internet -ne 0 ]; then
+    red
+    echo FAIL
+    white
+    echo "  maintenance tasks requiring internet connectivity have been disabled"
+    echo
+  else
+    green
+    echo OK
+    white
+  fi
 
-echo -n Setting the system clock...
-if [ $has_internet -ne 0 ]; then
-  yellow
-  echo "SKIP (no connection)"
-  white
-else
-  green
-  echo OK
-  white
-  sudo timedatectl set-ntp true
-fi
+  echo -n Setting the system clock...
+  if [ $has_internet -ne 0 ]; then
+    yellow
+    echo "SKIP (no connection)"
+    white
+  else
+    green
+    echo OK
+    white
+    sudo timedatectl set-ntp true
+  fi
 
-echo -n Updating the pacman mirror list...
-if [ $has_reflector -ne 0 ]; then
-  yellow
-  echo "SKIP (reflector not installed)"
-  white
-elif [ $has_internet -ne 0 ]; then
-  yellow
-  echo "SKIP (no connection)"
-  white
-elif (reflector $mirrorlist_settings --save /tmp/mirrorlist); then
-  sudo cp /tmp/mirrorlist /etc/pacman.d/mirrorlist
-  green
-  echo OK
-  white
-else
-  red
-  echo FAIL
-  white
-  exit 1
-fi
+  echo -n Updating the pacman mirror list...
+  if [ $has_reflector -ne 0 ]; then
+    yellow
+    echo "SKIP (reflector not installed)"
+    white
+  elif [ $has_internet -ne 0 ]; then
+    yellow
+    echo "SKIP (no connection)"
+    white
+  elif (reflector $mirrorlist_settings --save /tmp/mirrorlist); then
+    sudo cp /tmp/mirrorlist /etc/pacman.d/mirrorlist
+    green
+    echo OK
+    white
+  else
+    red
+    echo FAIL
+    white
+    return 1
+  fi
 
-echo -n Upgrading the system...
-if [ $has_internet -ne 0 ]; then
-  yellow
-  echo "SKIP (no connection)"
-  white
-else
-  echo
-  sudo pacman -Syu | while read line; do
+  echo -n Upgrading the system...
+  if [ $has_internet -ne 0 ]; then
+    yellow
+    echo "SKIP (no connection)"
+    white
+  else
+    echo
+    sudo pacman -Syu | while read line; do
+      echo "  $line"
+    done
+    echo
+  fi
+
+  echo Cleaning the pacman cache...
+  sudo paccache -r 2>&1 | while read line; do
+    echo "  $line"
+  done
+  sudo paccache -ruk0 2>&1 | while read line; do
     echo "  $line"
   done
   echo
-fi
 
-echo Cleaning the pacman cache...
-sudo paccache -r 2>&1 | while read line; do
-  echo "  $line"
-done
-sudo paccache -ruk0 2>&1 | while read line; do
-  echo "  $line"
-done
-echo
+  echo -n Checking for orphaned packages...
+  orphans=`pacman -Qtdq`
+  if [ -z "$orphans" ]; then
+    green
+    echo OK, none found
+    white
+  else
+    red
+    echo FAIL, found orphans
+    white
+    for pkg in $orphans; do
+      echo "  - $pkg"
+    done
+    echo
+  fi
 
-echo -n Checking for orphaned packages...
-orphans=`pacman -Qtdq`
-if [ -z "$orphans" ]; then
-  green
-  echo OK, none found
-  white
-else
-  red
-  echo FAIL, found orphans
-  white
-  for pkg in $orphans; do
+  echo Checking for high-profile errors...
+  sudo journalctl -p 0..3 -xn | while read line; do
+    echo "  $line"
+  done
+  echo
+
+  echo Checking for failed systemd services...
+  systemctl --all --failed | while read line; do
+    echo "  $line"
+  done
+  echo
+
+  echo -n "Checking for files that no package owns..."
+  if [ $has_lostfiles -ne 0 ]; then
+    yellow
+    echo "SKIP (lostfiles not installed)"
+    white
+  else
+    echo
+    sudo lostfiles | while read line; do
+      echo "  - $line"
+    done
+    echo
+  fi
+
+  echo -n Checking for broken symlinks...
+  # /tmp, /proc, and /run don't count
+  FOUND=`sudo find / -type l -! -exec test -e {} \; -print 2> /dev/null | grep -ve "^/\(proc\|run\|tmp\)"`
+  if [ -z "$FOUND" ]; then
+    green
+    echo OK
+    white
+  else
+    echo
+    echo "$FOUND" | while read line; do
+      echo -n "  - $line -> "
+      red
+      ls -l "$line" | rev | cut -d' ' -f1 | rev
+      white
+    done
+  fi
+  echo
+
+  echo The following official packages have been explicitly installed:
+
+  # get the packages that pacman claims have been "explicitly installed"
+  # this includes base and base-devel, which is problematic
+  explicit=`pacman -Qen | cut -d' ' -f1`
+
+  # get the members of base and base-devel
+  bases=`pacman -Sgq base`
+  basedevels=`pacman -Sgq base-devel`
+  grouped="$bases $basedevels"
+
+  # pull members of base and base-devel out of the "explicitly installed" list
+  for pkg in $grouped; do
+    explicit=`echo $explicit | sed "s/\b$pkg\b//g"`
+  done
+
+  # print 'em
+  for pkg in $explicit; do
     echo "  - $pkg"
   done
   echo
-fi
 
-echo Checking for high-profile errors...
-sudo journalctl -p 0..3 -xn | while read line; do
-  echo "  $line"
-done
-echo
-
-echo Checking for failed systemd services...
-systemctl --all --failed | while read line; do
-  echo "  $line"
-done
-echo
-
-echo -n "Checking for files that no package owns..."
-if [ $has_lostfiles -ne 0 ]; then
-  yellow
-  echo "SKIP (lostfiles not installed)"
-  white
-else
-  echo
-  sudo lostfiles | while read line; do
+  echo The following unofficial packages have been explicitly installed:
+  pacman -Qem | cut -d' ' -f1 | while read line; do
     echo "  - $line"
   done
   echo
-fi
 
-echo -n Checking for broken symlinks...
-# /tmp, /proc, and /run don't count
-FOUND=`sudo find / -type l -! -exec test -e {} \; -print 2> /dev/null | grep -ve "^/\(proc\|run\|tmp\)"`
-if [ -z "$FOUND" ]; then
-  green
-  echo OK
-  white
+  if [ $has_internet -ne 0 ]; then
+    echo "Consider running with an internet connection to upgrade the system and update the mirror list."
+  fi
+  if [ $has_reflector -ne 0 ]; then
+    echo "Consider installing reflector from official repos to enable mirrorlist updating."
+  fi
+  if [ $has_lostfiles -ne 0 ]; then
+    echo "Consider installing lostfiles from the AUR to enable lost file detection."
+  fi
+  return 0
+}
+
+if [ "$1" = "--help" ]; then
+  echo Usage:
+  echo "  arms [-p] <options for reflector>"
+  echo "  arms --help"
+  exit 0
+elif [ "$1" = "-p" ]; then
+  use_pager=0
+  shift
+  main | less -R
+  exit $?
 else
-  echo
-  echo "$FOUND" | while read line; do
-    echo -n "  - $line -> "
-    red
-    ls -l "$line" | rev | cut -d' ' -f1 | rev
-    white
-  done
+  use_pager=1
+  main
+  exit $?
 fi
-echo
-
-echo The following official packages have been explicitly installed:
-
-# get the packages that pacman claims have been "explicitly installed"
-# this includes base and base-devel, which is problematic
-explicit=`pacman -Qen | cut -d' ' -f1`
-
-# get the members of base and base-devel
-bases=`pacman -Sgq base`
-basedevels=`pacman -Sgq base-devel`
-grouped="$bases $basedevels"
-
-# pull members of base and base-devel out of the "explicitly installed" list
-for pkg in $grouped; do
-  explicit=`echo $explicit | sed "s/\b$pkg\b//g"`
-done
-
-# print 'em
-for pkg in $explicit; do
-  echo "  - $pkg"
-done
-echo
-
-echo The following unofficial packages have been explicitly installed:
-pacman -Qem | cut -d' ' -f1 | while read line; do
-  echo "  - $line"
-done
-echo
-
-if [ $has_internet -ne 0 ]; then
-  echo "Consider running with an internet connection to upgrade the system and update the mirror list."
-fi
-if [ $has_reflector -ne 0 ]; then
-  echo "Consider installing reflector from official repos to enable mirrorlist updating."
-fi
-if [ $has_lostfiles -ne 0 ]; then
-  echo "Consider installing lostfiles from the AUR to enable lost file detection."
-fi
-exit 0

@@ -2,7 +2,10 @@
 
 ## Usage
 
-    arms <options for reflector>
+    arms [-p] <options for reflector>
+    arms --help
+
+Pass `-p` as the first option to use `less -R` as a pager.
 
 ## Installing
 
