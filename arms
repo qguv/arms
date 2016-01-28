@@ -191,6 +191,9 @@ if [ "$1" = "--help" ]; then
   echo Usage:
   echo "  arms [-p] <options for reflector>"
   echo "  arms --help"
+  echo
+  echo Options:
+  echo "  -p  Use pager (less)."
   exit 0
 elif [ "$1" = "-p" ]; then
   use_pager=0
