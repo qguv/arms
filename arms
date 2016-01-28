@@ -33,8 +33,6 @@ main() {
   # check for optional dependencies
   command -v reflector > /dev/null 2>&1
   has_reflector="$?"
-  command -v lostfiles > /dev/null 2>&1
-  has_lostfiles="$?"
 
   echo -n Checking for internet connectivity...
   curl -s www.archlinux.org > /dev/null
@@ -134,19 +132,6 @@ main() {
   done
   echo
 
-  echo -n "Checking for files that no package owns..."
-  if [ $has_lostfiles -ne 0 ]; then
-    yellow
-    echo "SKIP (lostfiles not installed)"
-    white
-  else
-    echo
-    sudo lostfiles | while read line; do
-      echo "  - $line"
-    done
-    echo
-  fi
-
   echo -n Checking for broken symlinks...
   # /tmp, /proc, and /run don't count
   FOUND=`sudo find / -type l -! -exec test -e {} \; -print 2> /dev/null | grep -ve "^/\(proc\|run\|tmp\)"`
@@ -198,9 +183,6 @@ main() {
   fi
   if [ $has_reflector -ne 0 ]; then
     echo "Consider installing reflector from official repos to enable mirrorlist updating."
-  fi
-  if [ $has_lostfiles -ne 0 ]; then
-    echo "Consider installing lostfiles from the AUR to enable lost file detection."
   fi
   return 0
 }
