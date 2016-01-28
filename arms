@@ -22,6 +22,8 @@ white() {
 }
 
 main() {
+  white
+
   # interpret all options as options to mirrorlist
   mirrorlist_settings="$@"
   if [ -z "$mirrorlist_settings" ]; then
