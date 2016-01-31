@@ -27,7 +27,7 @@ main() {
   # interpret all options as options to mirrorlist
   mirrorlist_settings="$@"
   if [ -z "$mirrorlist_settings" ]; then
-    mirrorlist_settings="--protocol https --sort score"
+    mirrorlist_settings="--protocol https"
   fi
 
   # check for optional dependencies
