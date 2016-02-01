@@ -4,9 +4,7 @@
 
 # if outputting to a terminal, use COLORS
 colorize() {
-  if [ -t 1 ] || [ $use_pager -eq 0 ]; then
-    tput setaf $1
-  fi
+  tput setaf $1
 }
 red() {
   colorize 1
@@ -176,25 +174,11 @@ main() {
 
 if [ "$1" = "--help" ]; then
   echo Usage:
-  echo "  arms [-p] <options for reflector>"
+  echo "  arms <options for reflector>"
   echo "  arms --help"
-  echo
-  echo Options:
-  echo "  -p  Use pager (less)."
   exit 0
 fi
 
 set -o pipefail
-
-if [ "$1" = "-p" ]; then
-  use_pager=0
-  shift
-  main | less -R
-  main_full_success=$?
-else
-  use_pager=1
-  main
-  main_full_success=$?
-fi
-
-exit $main_full_success
+main | less -R
+exit $?
