@@ -197,12 +197,4 @@ else
   main_full_success=$?
 fi
 
-if [ $main_full_success -ne 0 ]; then
-  yellow
-  echo "Upgrading the system... SKIP"
-  white
-else
-  sudo pacman -Syu
-fi
-
 exit $main_full_success
