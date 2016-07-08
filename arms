@@ -59,6 +59,19 @@ main() {
     sudo timedatectl set-ntp true
   fi
 
+  echo -n Updating the pacman keyring...
+  if [ $has_internet -ne 0 ]; then
+    yellow
+    echo "SKIP (no connection)"
+    white
+  else
+    green
+    echo OK
+    white
+    sudo pacman-key --refresh-keys
+  fi
+
+
   echo -n Updating the pacman mirror list...
   if [ $has_reflector -ne 0 ]; then
     yellow
